@@ -12,6 +12,7 @@ Current MVP behavior:
 - Pressing `0` returns to the main menu from submenus
 - Setmore is represented by a mock adapter until API access is approved
 - Spoken prompts use `Polly.Joanna` at `85%` speed by default
+- Menu options include a short `450ms` pause between choices
 
 ## Menus
 
@@ -59,6 +60,7 @@ Create a new Render Web Service from this project.
   - `TWILIO_TTS_VOICE=Polly.Joanna`
   - `TWILIO_TTS_LANGUAGE=en-US`
   - `TWILIO_TTS_RATE=85%`
+  - `TWILIO_MENU_OPTION_PAUSE=450ms`
 
 Once deployed, set the Twilio phone number's incoming call webhook to:
 

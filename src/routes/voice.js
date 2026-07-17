@@ -29,17 +29,21 @@ function withFallback(req, prompt, actionPath) {
   );
 }
 
-function mainMenuPrompt(prefix = "") {
-  const menu = [
+function asPromptParts(prompt) {
+  if (!prompt) return [];
+  return Array.isArray(prompt) ? prompt : [prompt];
+}
+
+function mainMenuPrompt(prefix = []) {
+  return [
+    ...asPromptParts(prefix),
     `Thanks for calling ${business.name}.`,
     "To book a haircut, press 1.",
     "For beard services, press 2.",
     "For a perm, press 3.",
     "For kids cuts, press 4.",
     "For seniors, press 5."
-  ].join(" ");
-
-  return `${prefix}${menu}`;
+  ];
 }
 
 function afterHoursBookingPrefix() {
@@ -47,27 +51,30 @@ function afterHoursBookingPrefix() {
     "We're currently closed.",
     "Our regular hours are 9 A M to 6 P M, Monday through Sunday.",
     "You can still book an appointment using this phone menu."
-  ].join(" ");
+  ];
 }
 
-function categoryPrompt(category, prefix = "") {
+function categoryPrompt(category, prefix = []) {
   const options = category.services
     .map((service) => {
       return `For ${service.speechName}, press ${service.digit}.`;
-    })
-    .join(" ");
+    });
 
-  return `${prefix}${options} Press 0 to return to the main menu.`;
+  return [...asPromptParts(prefix), ...options, "Press 0 to return to the main menu."];
 }
 
-function slotPrompt(service, slots, prefix = "") {
+function slotPrompt(service, slots, prefix = []) {
   const options = slots
     .map((slot, index) => {
       return `For ${formatSlotForSpeech(slot, business.timezone)}, press ${index + 1}.`;
-    })
-    .join(" ");
+    });
 
-  return `${prefix}You chose ${service.speechName}. ${options} Press 0 to return to the main menu.`;
+  return [
+    ...asPromptParts(prefix),
+    `You chose ${service.speechName}.`,
+    ...options,
+    "Press 0 to return to the main menu."
+  ];
 }
 
 function confirmPrompt(service, startAt) {
@@ -77,14 +84,14 @@ function confirmPrompt(service, startAt) {
     `You selected ${when} for ${service.speechName}.`,
     "To confirm this booking using the phone number you called from, press 1.",
     "Press 0 to return to the main menu."
-  ].join(" ");
+  ];
 }
 
 function createVoiceRouter({ bookingClient, now = () => new Date() }) {
   const router = express.Router();
 
   function handleIncomingCall(req, res) {
-    const prefix = isBusinessOpen(business, now()) ? "" : `${afterHoursBookingPrefix()} `;
+    const prefix = isBusinessOpen(business, now()) ? [] : afterHoursBookingPrefix();
     return sendTwiML(res, withFallback(req, mainMenuPrompt(prefix), "/voice/main-menu"));
   }
 
@@ -184,7 +191,7 @@ function createVoiceRouter({ bookingClient, now = () => new Date() }) {
         response(
           gather({
             action: actionUrl(req, `/voice/confirm/${match.service.key}`, { startAt: req.query.startAt }),
-            text: `Sorry, that was not a valid choice. ${confirmPrompt(match.service, req.query.startAt)}`
+            text: ["Sorry, that was not a valid choice.", ...confirmPrompt(match.service, req.query.startAt)]
           }),
           say("Sorry, I did not receive a choice."),
           redirect(actionUrl(req, `/voice/confirm/${match.service.key}`, { startAt: req.query.startAt }))

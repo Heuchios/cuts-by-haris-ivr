@@ -19,10 +19,22 @@ function textToSpeechRate() {
   return process.env.TWILIO_TTS_RATE || "85%";
 }
 
+function menuOptionPause() {
+  return process.env.TWILIO_MENU_OPTION_PAUSE || "450ms";
+}
+
+function speechContent(prompt) {
+  const parts = Array.isArray(prompt) ? prompt : [prompt];
+  return parts
+    .filter((part) => part !== undefined && part !== null && part !== "")
+    .map(escapeXml)
+    .join(`<break time="${escapeXml(menuOptionPause())}"/>`);
+}
+
 function say(text) {
   return [
     `<Say voice="${escapeXml(textToSpeechVoice())}" language="${escapeXml(textToSpeechLanguage())}">`,
-    `<prosody rate="${escapeXml(textToSpeechRate())}">${escapeXml(text)}</prosody>`,
+    `<prosody rate="${escapeXml(textToSpeechRate())}">${speechContent(text)}</prosody>`,
     "</Say>"
   ].join("");
 }
@@ -54,6 +66,7 @@ function sendTwiML(res, xml) {
 module.exports = {
   gather,
   hangup,
+  menuOptionPause,
   redirect,
   response,
   say,

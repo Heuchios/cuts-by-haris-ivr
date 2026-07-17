@@ -62,6 +62,7 @@ test("haircut menu reads service names without prices or durations", async () =>
     assert.match(xml, /For haircut and beard, press 3/);
     assert.match(xml, /For buzz cut, press 4/);
     assert.match(xml, /For long haircut, press 5/);
+    assert.match(xml, /For skin fade, press 1\.<break time="450ms"\/>For regular haircut/);
     assert.doesNotMatch(xml, /minutes/);
     assert.doesNotMatch(xml, /dollars/);
   } finally {
