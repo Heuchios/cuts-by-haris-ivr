@@ -9,13 +9,29 @@ const {
 const { message, response, sendMessagingTwiML } = require("../messagingTwiml");
 
 const sessions = new Map();
+const lastCustomerByOwner = new Map();
+
+function canonicalPhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10) return `+1${digits}`;
+  return `+${digits}`;
+}
+
+function ownerPhoneNumber() {
+  return canonicalPhone(process.env.OWNER_PHONE_NUMBER);
+}
 
 function normalizeBody(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function originalBody(req) {
+  return String(req.body.Body || "").trim();
+}
+
 function sessionKey(req) {
-  return req.body.From || "unknown";
+  return canonicalPhone(req.body.From) || "unknown";
 }
 
 function setSession(from, value) {
@@ -31,6 +47,62 @@ function resetSession(from) {
 
 function sendText(res, text) {
   return sendMessagingTwiML(res, response(message(text)));
+}
+
+function sendTo(res, to, text) {
+  return sendMessagingTwiML(res, response(message(text, { to })));
+}
+
+function parseOwnerReply(text, fallbackCustomer) {
+  const explicit = text.match(/^r(?:eply)?\s+(\+?\d[\d\s().-]{8,})\s+([\s\S]+)$/i);
+  if (explicit) {
+    return {
+      to: canonicalPhone(explicit[1]),
+      body: explicit[2].trim()
+    };
+  }
+
+  const implicit = text.match(/^r(?:eply)?\s+([\s\S]+)$/i);
+  if (implicit && fallbackCustomer) {
+    return {
+      to: fallbackCustomer,
+      body: implicit[1].trim()
+    };
+  }
+
+  return null;
+}
+
+function ownerHelpText() {
+  return [
+    "Owner commands:",
+    "r +13065551212 your message",
+    "or reply to the most recent customer with:",
+    "r your message"
+  ].join("\n");
+}
+
+function shouldStartBooking(body) {
+  return !body || ["start", "book", "booking", "appointment", "menu"].includes(body);
+}
+
+function shouldForwardToOwner(body, session) {
+  if (session) return false;
+  if (/^[1-5]$/.test(body)) return false;
+  return true;
+}
+
+function forwardText() {
+  return [
+    "New text to Cuts By Haris",
+    "From: {{from}}",
+    "{{body}}",
+    "",
+    "Reply with:",
+    "r {{from}} your message",
+    "or for this customer:",
+    "r your message"
+  ].join("\n");
 }
 
 function mainMenuText(prefix = "") {
@@ -109,9 +181,33 @@ function createSmsRouter({ bookingClient }) {
 
   router.post("/incoming", async (req, res) => {
     const from = sessionKey(req);
+    const owner = ownerPhoneNumber();
     const body = normalizeBody(req.body.Body);
+    const rawBody = originalBody(req);
 
-    if (!body || ["hi", "hello", "hey", "start", "book", "menu"].includes(body)) {
+    if (owner && from === owner) {
+      const ownerReply = parseOwnerReply(rawBody, lastCustomerByOwner.get(owner));
+      if (!ownerReply || !ownerReply.to || !ownerReply.body) {
+        return sendText(res, ownerHelpText());
+      }
+
+      return sendTo(res, ownerReply.to, ownerReply.body);
+    }
+
+    const session = sessions.get(from);
+
+    if (owner && shouldForwardToOwner(body, session)) {
+      lastCustomerByOwner.set(owner, from);
+      return sendTo(
+        res,
+        owner,
+        forwardText()
+          .replaceAll("{{from}}", from)
+          .replace("{{body}}", rawBody || "(empty message)")
+      );
+    }
+
+    if (shouldStartBooking(body)) {
       resetSession(from);
       return sendText(res, mainMenuText());
     }
@@ -125,8 +221,6 @@ function createSmsRouter({ bookingClient }) {
       resetSession(from);
       return sendText(res, mainMenuText());
     }
-
-    const session = sessions.get(from);
 
     if (!session) {
       const category = getCategoryByDigit(body);
@@ -214,6 +308,6 @@ function createSmsRouter({ bookingClient }) {
 
 module.exports = {
   createSmsRouter,
+  lastCustomerByOwner,
   sessions
 };
-

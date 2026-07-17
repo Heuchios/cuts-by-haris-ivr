@@ -7,8 +7,13 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
-function message(text) {
-  return `<Message>${escapeXml(text)}</Message>`;
+function message(text, attrs = {}) {
+  const attrText = Object.entries(attrs)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => ` ${key}="${escapeXml(value)}"`)
+    .join("");
+
+  return `<Message${attrText}>${escapeXml(text)}</Message>`;
 }
 
 function response(...nodes) {
@@ -24,4 +29,3 @@ module.exports = {
   response,
   sendMessagingTwiML
 };
-

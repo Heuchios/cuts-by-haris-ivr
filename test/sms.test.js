@@ -3,7 +3,7 @@ const http = require("node:http");
 const test = require("node:test");
 const express = require("express");
 const { business } = require("../src/businessData");
-const { createSmsRouter, sessions } = require("../src/routes/sms");
+const { createSmsRouter, lastCustomerByOwner, sessions } = require("../src/routes/sms");
 const { createMockSetmoreClient } = require("../src/setmore/mockSetmoreClient");
 
 async function startTestServer(router) {
@@ -38,6 +38,8 @@ async function sendSms(baseUrl, body, from = "+13065551212") {
 
 test("sms booking flow uses numbered text menus", async () => {
   sessions.clear();
+  lastCustomerByOwner.clear();
+  delete process.env.OWNER_PHONE_NUMBER;
   const bookingClient = createMockSetmoreClient({ business });
   const router = createSmsRouter({ bookingClient });
   const server = await startTestServer(router);
@@ -72,3 +74,73 @@ test("sms booking flow uses numbered text menus", async () => {
   }
 });
 
+test("non-booking texts forward to owner phone when smart routing is enabled", async () => {
+  sessions.clear();
+  lastCustomerByOwner.clear();
+  process.env.OWNER_PHONE_NUMBER = "+13065550000";
+
+  const bookingClient = createMockSetmoreClient({ business });
+  const router = createSmsRouter({ bookingClient });
+  const server = await startTestServer(router);
+
+  try {
+    const result = await sendSms(server.baseUrl, "Hey, are you available today?", "+13065551111");
+
+    assert.equal(result.response.status, 200);
+    assert.match(result.xml, /<Message to="\+13065550000">/);
+    assert.match(result.xml, /New text to Cuts By Haris/);
+    assert.match(result.xml, /From: \+13065551111/);
+    assert.match(result.xml, /Hey, are you available today\?/);
+    assert.equal(lastCustomerByOwner.get("+13065550000"), "+13065551111");
+  } finally {
+    await server.close();
+    sessions.clear();
+    lastCustomerByOwner.clear();
+    delete process.env.OWNER_PHONE_NUMBER;
+  }
+});
+
+test("owner can reply to the most recent forwarded customer", async () => {
+  sessions.clear();
+  lastCustomerByOwner.clear();
+  process.env.OWNER_PHONE_NUMBER = "+13065550000";
+
+  const bookingClient = createMockSetmoreClient({ business });
+  const router = createSmsRouter({ bookingClient });
+  const server = await startTestServer(router);
+
+  try {
+    await sendSms(server.baseUrl, "Do you take walk-ins?", "+13065552222");
+    const result = await sendSms(server.baseUrl, "r Yes, until 6 today.", "+13065550000");
+
+    assert.equal(result.response.status, 200);
+    assert.match(result.xml, /<Message to="\+13065552222">Yes, until 6 today\.<\/Message>/);
+  } finally {
+    await server.close();
+    sessions.clear();
+    lastCustomerByOwner.clear();
+    delete process.env.OWNER_PHONE_NUMBER;
+  }
+});
+
+test("owner can reply to an explicit customer number", async () => {
+  sessions.clear();
+  lastCustomerByOwner.clear();
+  process.env.OWNER_PHONE_NUMBER = "+13065550000";
+
+  const bookingClient = createMockSetmoreClient({ business });
+  const router = createSmsRouter({ bookingClient });
+  const server = await startTestServer(router);
+
+  try {
+    const result = await sendSms(server.baseUrl, "r +13065553333 Yes, I can do 2 PM.", "+13065550000");
+
+    assert.equal(result.response.status, 200);
+    assert.match(result.xml, /<Message to="\+13065553333">Yes, I can do 2 PM\.<\/Message>/);
+  } finally {
+    await server.close();
+    sessions.clear();
+    lastCustomerByOwner.clear();
+    delete process.env.OWNER_PHONE_NUMBER;
+  }
+});

@@ -14,6 +14,7 @@ Current MVP behavior:
 - Spoken prompts use `Polly.Joanna` at `90%` speed by default
 - Menu options include a short `450ms` pause between choices
 - SMS customers can text `book`, choose category/service/time by number, and confirm by replying `1`
+- If `OWNER_PHONE_NUMBER` is set, non-booking texts forward to the owner phone
 
 ## Menus
 
@@ -63,6 +64,8 @@ Create a new Render Web Service from this project.
   - `TWILIO_TTS_LANGUAGE=en-US`
   - `TWILIO_TTS_RATE=90%`
   - `TWILIO_MENU_OPTION_PAUSE=450ms`
+- Optional smart SMS routing:
+  - `OWNER_PHONE_NUMBER=+13065551212`
 
 Once deployed, set the Twilio phone number's incoming call webhook to:
 
@@ -79,6 +82,13 @@ https://your-render-url.onrender.com/sms/incoming
 ```
 
 Use `POST` as the webhook method.
+
+Normal text routing:
+
+- Customer texts `book`: booking menu starts.
+- Customer texts anything else: message forwards to `OWNER_PHONE_NUMBER`.
+- Owner replies with `r +13065551212 your message`.
+- Owner can reply to the most recent forwarded customer with `r your message`.
 
 ## Next integration step
 
