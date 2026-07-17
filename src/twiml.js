@@ -16,7 +16,7 @@ function textToSpeechLanguage() {
 }
 
 function textToSpeechRate() {
-  return process.env.TWILIO_TTS_RATE || "90%";
+  return process.env.TWILIO_TTS_RATE || "85%";
 }
 
 function say(text) {
