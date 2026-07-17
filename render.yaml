@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: cuts-by-haris-ivr
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PUBLIC_BASE_URL
+        sync: false
