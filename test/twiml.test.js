@@ -7,9 +7,9 @@ test("spoken prompts use a calmer default speaking rate", () => {
 
   const xml = say("Thanks for calling Cuts By Haris.");
 
-  assert.equal(textToSpeechRate(), "85%");
+  assert.equal(textToSpeechRate(), "90%");
   assert.match(xml, /voice="Polly\.Joanna"/);
-  assert.match(xml, /<prosody rate="85%">Thanks for calling Cuts By Haris\.<\/prosody>/);
+  assert.match(xml, /<prosody rate="90%">Thanks for calling Cuts By Haris\.<\/prosody>/);
 });
 
 test("spoken menu parts include a short pause between options", () => {
