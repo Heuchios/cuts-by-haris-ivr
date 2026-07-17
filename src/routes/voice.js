@@ -53,7 +53,7 @@ function afterHoursBookingPrefix() {
 function categoryPrompt(category, prefix = "") {
   const options = category.services
     .map((service) => {
-      return `For ${service.speechName}, ${service.durationMinutes} minutes, ${service.priceDollars} dollars, press ${service.digit}.`;
+      return `For ${service.speechName}, press ${service.digit}.`;
     })
     .join(" ");
 

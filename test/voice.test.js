@@ -43,3 +43,28 @@ test("after-hours callers can still enter the booking menu", async () => {
     await server.close();
   }
 });
+
+test("haircut menu reads service names without prices or durations", async () => {
+  const bookingClient = {};
+  const router = createVoiceRouter({ bookingClient });
+  const server = await startTestServer(router);
+
+  try {
+    const response = await fetch(`${server.baseUrl}/voice/main-menu`, {
+      method: "POST",
+      body: new URLSearchParams({ Digits: "1" })
+    });
+    const xml = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(xml, /For skin fade, press 1/);
+    assert.match(xml, /For regular haircut, no fade, press 2/);
+    assert.match(xml, /For haircut and beard, press 3/);
+    assert.match(xml, /For buzz cut, press 4/);
+    assert.match(xml, /For long haircut, press 5/);
+    assert.doesNotMatch(xml, /minutes/);
+    assert.doesNotMatch(xml, /dollars/);
+  } finally {
+    await server.close();
+  }
+});

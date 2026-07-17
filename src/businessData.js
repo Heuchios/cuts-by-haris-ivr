@@ -48,7 +48,7 @@ const business = {
           digit: "5",
           key: "long-haircut-scissors",
           name: "Long haircut (scissors cut)",
-          speechName: "long haircut with scissors",
+          speechName: "long haircut",
           durationMinutes: 40,
           priceDollars: 35
         }
@@ -169,4 +169,3 @@ module.exports = {
   getServiceByKey,
   listServices
 };
-
