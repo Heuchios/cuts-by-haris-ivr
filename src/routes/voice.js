@@ -83,10 +83,13 @@ function confirmPrompt(service, startAt) {
 function createVoiceRouter({ bookingClient, now = () => new Date() }) {
   const router = express.Router();
 
-  router.post("/incoming", (req, res) => {
+  function handleIncomingCall(req, res) {
     const prefix = isBusinessOpen(business, now()) ? "" : `${afterHoursBookingPrefix()} `;
     return sendTwiML(res, withFallback(req, mainMenuPrompt(prefix), "/voice/main-menu"));
-  });
+  }
+
+  router.post("/incoming", handleIncomingCall);
+  router.post("/", handleIncomingCall);
 
   router.post("/main-menu", (req, res) => {
     const digit = req.body.Digits;
