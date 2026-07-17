@@ -1,5 +1,6 @@
 const express = require("express");
 const { business } = require("./businessData");
+const { createSmsRouter } = require("./routes/sms");
 const { createVoiceRouter } = require("./routes/voice");
 const { createMockSetmoreClient } = require("./setmore/mockSetmoreClient");
 
@@ -10,7 +11,9 @@ app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.type("text/plain").send(`${business.name} IVR is running. Twilio webhook: /voice/incoming`);
+  res
+    .type("text/plain")
+    .send(`${business.name} booking app is running. Voice webhook: /voice/incoming. SMS webhook: /sms/incoming`);
 });
 
 app.get("/health", (req, res) => {
@@ -22,6 +25,7 @@ app.get("/health", (req, res) => {
 });
 
 const bookingClient = createMockSetmoreClient({ business });
+app.use("/sms", createSmsRouter({ bookingClient }));
 app.use("/voice", createVoiceRouter({ bookingClient }));
 
 app.listen(port, () => {

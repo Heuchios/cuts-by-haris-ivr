@@ -1,6 +1,6 @@
 # Cuts By Haris IVR Starter
 
-This is a small Node.js/Twilio starter for a keypad-based appointment booking phone menu.
+This is a small Node.js/Twilio starter for appointment booking by SMS, with the original voice menu still available.
 
 Current MVP behavior:
 
@@ -13,6 +13,7 @@ Current MVP behavior:
 - Setmore is represented by a mock adapter until API access is approved
 - Spoken prompts use `Polly.Joanna` at `90%` speed by default
 - Menu options include a short `450ms` pause between choices
+- SMS customers can text `book`, choose category/service/time by number, and confirm by replying `1`
 
 ## Menus
 
@@ -43,6 +44,7 @@ Twilio webhook:
 
 ```text
 POST https://your-public-url/voice/incoming
+POST https://your-public-url/sms/incoming
 ```
 
 For local Twilio testing, expose the app with a tunnel such as ngrok and set `PUBLIC_BASE_URL` to the tunnel URL.
@@ -66,6 +68,14 @@ Once deployed, set the Twilio phone number's incoming call webhook to:
 
 ```text
 https://your-render-url.onrender.com/voice/incoming
+```
+
+Use `POST` as the webhook method.
+
+For text booking, set the Twilio phone number's incoming message webhook to:
+
+```text
+https://your-render-url.onrender.com/sms/incoming
 ```
 
 Use `POST` as the webhook method.
