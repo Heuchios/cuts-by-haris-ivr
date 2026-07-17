@@ -7,8 +7,16 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
+function textToSpeechVoice() {
+  return process.env.TWILIO_TTS_VOICE || "Polly.Joanna";
+}
+
+function textToSpeechLanguage() {
+  return process.env.TWILIO_TTS_LANGUAGE || "en-US";
+}
+
 function say(text) {
-  return `<Say voice="alice" language="en-US">${escapeXml(text)}</Say>`;
+  return `<Say voice="${escapeXml(textToSpeechVoice())}" language="${escapeXml(textToSpeechLanguage())}">${escapeXml(text)}</Say>`;
 }
 
 function gather({ action, text, timeout = 7, numDigits = 1 }) {
@@ -43,4 +51,3 @@ module.exports = {
   say,
   sendTwiML
 };
-
