@@ -11,7 +11,7 @@ Current MVP behavior:
 - Callers choose a category, then service, then one of the next available mock appointment times
 - Pressing `0` returns to the main menu from submenus
 - Setmore is represented by a mock adapter until API access is approved
-- Spoken prompts use `Polly.Joanna` by default instead of Twilio's older `alice` voice
+- Spoken prompts use `Polly.Joanna` at `90%` speed by default
 
 ## Menus
 
@@ -58,6 +58,7 @@ Create a new Render Web Service from this project.
 - Optional voice variables:
   - `TWILIO_TTS_VOICE=Polly.Joanna`
   - `TWILIO_TTS_LANGUAGE=en-US`
+  - `TWILIO_TTS_RATE=90%`
 
 Once deployed, set the Twilio phone number's incoming call webhook to:
 

@@ -15,8 +15,16 @@ function textToSpeechLanguage() {
   return process.env.TWILIO_TTS_LANGUAGE || "en-US";
 }
 
+function textToSpeechRate() {
+  return process.env.TWILIO_TTS_RATE || "90%";
+}
+
 function say(text) {
-  return `<Say voice="${escapeXml(textToSpeechVoice())}" language="${escapeXml(textToSpeechLanguage())}">${escapeXml(text)}</Say>`;
+  return [
+    `<Say voice="${escapeXml(textToSpeechVoice())}" language="${escapeXml(textToSpeechLanguage())}">`,
+    `<prosody rate="${escapeXml(textToSpeechRate())}">${escapeXml(text)}</prosody>`,
+    "</Say>"
+  ].join("");
 }
 
 function gather({ action, text, timeout = 7, numDigits = 1 }) {
@@ -49,5 +57,6 @@ module.exports = {
   redirect,
   response,
   say,
-  sendTwiML
+  sendTwiML,
+  textToSpeechRate
 };
