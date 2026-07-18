@@ -85,7 +85,7 @@ Use `POST` as the webhook method.
 
 Normal text routing:
 
-- Customer texts a booking phrase like `book`, `haircut`, `fade`, `beard`, or `appointment`: booking menu starts.
+- Customer texts a booking phrase like `book`, `haircut`, `fade`, `beard`, `appointment`, `can I get in`, `any openings`, `walk-ins`, or `squeeze me in`: booking menu starts.
 - Customer texts anything else: message forwards to `OWNER_PHONE_NUMBER` without an automatic customer reply.
 - Owner replies with `r +13065551212 your message`.
 - Owner can reply to the most recent forwarded customer with `r your message`.

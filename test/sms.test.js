@@ -124,7 +124,7 @@ test("non-booking texts produce no bot reply when owner routing is disabled", as
   }
 });
 
-test("barber booking phrases activate the booking menu", async () => {
+test("barber booking phrases and long customer texts activate the booking menu", async () => {
   sessions.clear();
   lastCustomerByOwner.clear();
   delete process.env.OWNER_PHONE_NUMBER;
@@ -134,11 +134,25 @@ test("barber booking phrases activate the booking menu", async () => {
   const server = await startTestServer(router);
 
   try {
-    const result = await sendSms(server.baseUrl, "Hi, I need a haircut appointment", "+13065554444");
+    const examples = [
+      "Hi, I need a haircut appointment",
+      "Can I get in sometime tomorrow?",
+      "Do you have any openings for a fade this week?",
+      "Can you squeeze me in for a beard trim?",
+      "My son needs a cut after school",
+      "Looking to book a low fade",
+      "Do you take walk-ins?",
+      "I want to get my hair done",
+      "Can I book a regular cut?"
+    ];
 
-    assert.equal(result.response.status, 200);
-    assert.match(result.xml, /Thanks for texting Cuts By Haris/);
-    assert.match(result.xml, /1 Haircut/);
+    for (const [index, text] of examples.entries()) {
+      const result = await sendSms(server.baseUrl, text, `+13065554${String(index).padStart(3, "0")}`);
+
+      assert.equal(result.response.status, 200);
+      assert.match(result.xml, /Thanks for texting Cuts By Haris/, text);
+      assert.match(result.xml, /1 Haircut/, text);
+    }
   } finally {
     await server.close();
     sessions.clear();
@@ -180,7 +194,7 @@ test("owner can reply to the most recent forwarded customer", async () => {
   const server = await startTestServer(router);
 
   try {
-    await sendSms(server.baseUrl, "Do you take walk-ins?", "+13065552222");
+    await sendSms(server.baseUrl, "What is your address?", "+13065552222");
     const result = await sendSms(server.baseUrl, "r Yes, until 6 today.", "+13065550000");
 
     assert.equal(result.response.status, 200);
