@@ -227,8 +227,34 @@ function confirmText(service, slot) {
   ].join("\n");
 }
 
+function bookingSystemTroubleText() {
+  return [
+    "Sorry, the booking system is having trouble right now.",
+    "Please text us what service and time you want, and we will help you book it."
+  ].join("\n");
+}
+
 async function showSlots({ res, from, bookingClient, service, prefix = "" }) {
-  const slots = await bookingClient.listAvailableSlots({ service, count: 3 });
+  let slots;
+  try {
+    slots = await bookingClient.listAvailableSlots({ service, count: 3 });
+  } catch (error) {
+    console.error("SMS slot lookup failed", error);
+    resetSession(from);
+    return sendText(res, bookingSystemTroubleText());
+  }
+
+  if (!slots.length) {
+    resetSession(from);
+    return sendText(
+      res,
+      [
+        `Sorry, I could not find open times for ${service.speechName} right now.`,
+        "Please text us what day works for you and we will help you book it."
+      ].join("\n")
+    );
+  }
+
   setSession(from, {
     step: "select-slot",
     serviceKey: service.key,
@@ -351,11 +377,18 @@ function createSmsRouter({ bookingClient }) {
         return sendText(res, confirmText(match.service, session.selectedSlot));
       }
 
-      const appointment = await bookingClient.createAppointment({
-        service: match.service,
-        startAt: session.selectedSlot.startAt,
-        customerPhone: from
-      });
+      let appointment;
+      try {
+        appointment = await bookingClient.createAppointment({
+          service: match.service,
+          startAt: session.selectedSlot.startAt,
+          customerPhone: from
+        });
+      } catch (error) {
+        console.error("SMS appointment create failed", error);
+        resetSession(from);
+        return sendText(res, bookingSystemTroubleText());
+      }
 
       resetSession(from);
       return sendText(

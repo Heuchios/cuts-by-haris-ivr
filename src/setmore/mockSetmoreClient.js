@@ -28,6 +28,8 @@ function buildSlot(local, startMinutes, service) {
 
 function createMockSetmoreClient({ business }) {
   return {
+    mode: "mock",
+
     async listAvailableSlots({ service, count = 3, from = new Date() }) {
       const slots = [];
       const open = 9 * 60;
@@ -73,4 +75,3 @@ function createMockSetmoreClient({ business }) {
 module.exports = {
   createMockSetmoreClient
 };
-

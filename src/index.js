@@ -2,13 +2,15 @@ const express = require("express");
 const { business } = require("./businessData");
 const { createSmsRouter } = require("./routes/sms");
 const { createVoiceRouter } = require("./routes/voice");
-const { createMockSetmoreClient } = require("./setmore/mockSetmoreClient");
+const { createBookingClient } = require("./setmore/bookingClientFactory");
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
 
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
+
+const bookingClient = createBookingClient({ business });
 
 app.get("/", (req, res) => {
   res
@@ -21,11 +23,12 @@ app.get("/health", (req, res) => {
     ok: true,
     business: business.name,
     timezone: business.timezone,
-    smsForwardingEnabled: Boolean(process.env.OWNER_PHONE_NUMBER)
+    smsForwardingEnabled: Boolean(process.env.OWNER_PHONE_NUMBER),
+    bookingMode: bookingClient.mode,
+    setmore: bookingClient.configStatus
   });
 });
 
-const bookingClient = createMockSetmoreClient({ business });
 app.use("/sms", createSmsRouter({ bookingClient }));
 app.use("/voice", createVoiceRouter({ bookingClient }));
 

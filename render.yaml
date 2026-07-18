@@ -10,3 +10,9 @@ services:
         value: production
       - key: PUBLIC_BASE_URL
         sync: false
+      - key: SETMORE_ENABLED
+        value: "false"
+      - key: SETMORE_REFRESH_TOKEN
+        sync: false
+      - key: SETMORE_STAFF_KEY
+        sync: false

@@ -87,6 +87,13 @@ function confirmPrompt(service, startAt) {
   ];
 }
 
+function bookingSystemTroubleResponse() {
+  return response(
+    say("Sorry, the booking system is having trouble right now. Please text us and we will help you book. Goodbye."),
+    hangup()
+  );
+}
+
 function createVoiceRouter({ bookingClient, now = () => new Date() }) {
   const router = express.Router();
 
@@ -135,7 +142,24 @@ function createVoiceRouter({ bookingClient, now = () => new Date() }) {
       );
     }
 
-    const slots = await bookingClient.listAvailableSlots({ service });
+    let slots;
+    try {
+      slots = await bookingClient.listAvailableSlots({ service });
+    } catch (error) {
+      console.error("Voice slot lookup failed", error);
+      return sendTwiML(res, bookingSystemTroubleResponse());
+    }
+
+    if (!slots.length) {
+      return sendTwiML(
+        res,
+        response(
+          say(`Sorry, I could not find open times for ${service.speechName} right now. Please text us and we will help you book.`),
+          hangup()
+        )
+      );
+    }
+
     return sendTwiML(res, withFallback(req, slotPrompt(service, slots), `/voice/slot/${service.key}`));
   });
 
@@ -151,7 +175,24 @@ function createVoiceRouter({ bookingClient, now = () => new Date() }) {
     }
 
     const slotIndex = Number(digit) - 1;
-    const slots = await bookingClient.listAvailableSlots({ service: match.service });
+    let slots;
+    try {
+      slots = await bookingClient.listAvailableSlots({ service: match.service });
+    } catch (error) {
+      console.error("Voice slot lookup failed", error);
+      return sendTwiML(res, bookingSystemTroubleResponse());
+    }
+
+    if (!slots.length) {
+      return sendTwiML(
+        res,
+        response(
+          say(`Sorry, I could not find open times for ${match.service.speechName} right now. Please text us and we will help you book.`),
+          hangup()
+        )
+      );
+    }
+
     const selectedSlot = slots[slotIndex];
     if (!selectedSlot) {
       return sendTwiML(
@@ -199,11 +240,17 @@ function createVoiceRouter({ bookingClient, now = () => new Date() }) {
       );
     }
 
-    const appointment = await bookingClient.createAppointment({
-      service: match.service,
-      startAt: req.query.startAt,
-      customerPhone: req.body.From || "unknown"
-    });
+    let appointment;
+    try {
+      appointment = await bookingClient.createAppointment({
+        service: match.service,
+        startAt: req.query.startAt,
+        customerPhone: req.body.From || "unknown"
+      });
+    } catch (error) {
+      console.error("Voice appointment create failed", error);
+      return sendTwiML(res, bookingSystemTroubleResponse());
+    }
 
     const when = formatSlotForSpeech({ startAt: appointment.startAt }, business.timezone);
     return sendTwiML(
