@@ -20,7 +20,8 @@ app.get("/health", (req, res) => {
   res.json({
     ok: true,
     business: business.name,
-    timezone: business.timezone
+    timezone: business.timezone,
+    smsForwardingEnabled: Boolean(process.env.OWNER_PHONE_NUMBER)
   });
 });
 

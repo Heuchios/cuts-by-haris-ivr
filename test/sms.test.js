@@ -100,6 +100,32 @@ test("non-booking texts forward to owner phone when smart routing is enabled", a
   }
 });
 
+test("non-booking texts do not show the booking menu when owner routing is disabled", async () => {
+  sessions.clear();
+  lastCustomerByOwner.clear();
+  delete process.env.OWNER_PHONE_NUMBER;
+
+  const bookingClient = createMockSetmoreClient({ business });
+  const router = createSmsRouter({ bookingClient });
+  const server = await startTestServer(router);
+
+  try {
+    const result = await sendSms(server.baseUrl, "Hey, are you available today?", "+13065551111");
+
+    assert.equal(result.response.status, 200);
+    assert.match(result.xml, /Thanks for texting Cuts By Haris/);
+    assert.match(result.xml, /For appointment booking, reply book/);
+    assert.doesNotMatch(result.xml, /Sorry, I did not understand/);
+    assert.doesNotMatch(result.xml, /1 Haircut/);
+  } finally {
+    await server.close();
+    sessions.clear();
+    lastCustomerByOwner.clear();
+    delete process.env.OWNER_PHONE_NUMBER;
+  }
+});
+
+
 test("owner can reply to the most recent forwarded customer", async () => {
   sessions.clear();
   lastCustomerByOwner.clear();

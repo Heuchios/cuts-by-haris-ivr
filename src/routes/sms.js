@@ -88,6 +88,7 @@ function shouldStartBooking(body) {
 
 function shouldForwardToOwner(body, session) {
   if (session) return false;
+  if (shouldStartBooking(body)) return false;
   if (/^[1-5]$/.test(body)) return false;
   return true;
 }
@@ -102,6 +103,14 @@ function forwardText() {
     "r {{from}} your message",
     "or for this customer:",
     "r your message"
+  ].join("\n");
+}
+
+function noOwnerFallbackText() {
+  return [
+    `Thanks for texting ${business.name}.`,
+    "For appointment booking, reply book.",
+    "For other questions, Haris will reply when available."
   ].join("\n");
 }
 
@@ -205,6 +214,10 @@ function createSmsRouter({ bookingClient }) {
           .replaceAll("{{from}}", from)
           .replace("{{body}}", rawBody || "(empty message)")
       );
+    }
+
+    if (!owner && shouldForwardToOwner(body, session)) {
+      return sendText(res, noOwnerFallbackText());
     }
 
     if (shouldStartBooking(body)) {
