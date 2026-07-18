@@ -100,7 +100,7 @@ test("non-booking texts forward to owner phone when smart routing is enabled", a
   }
 });
 
-test("non-booking texts do not show the booking menu when owner routing is disabled", async () => {
+test("non-booking texts produce no bot reply when owner routing is disabled", async () => {
   sessions.clear();
   lastCustomerByOwner.clear();
   delete process.env.OWNER_PHONE_NUMBER;
@@ -113,10 +113,54 @@ test("non-booking texts do not show the booking menu when owner routing is disab
     const result = await sendSms(server.baseUrl, "Hey, are you available today?", "+13065551111");
 
     assert.equal(result.response.status, 200);
-    assert.match(result.xml, /Thanks for texting Cuts By Haris/);
-    assert.match(result.xml, /For appointment booking, reply book/);
+    assert.equal(result.xml, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
     assert.doesNotMatch(result.xml, /Sorry, I did not understand/);
     assert.doesNotMatch(result.xml, /1 Haircut/);
+  } finally {
+    await server.close();
+    sessions.clear();
+    lastCustomerByOwner.clear();
+    delete process.env.OWNER_PHONE_NUMBER;
+  }
+});
+
+test("barber booking phrases activate the booking menu", async () => {
+  sessions.clear();
+  lastCustomerByOwner.clear();
+  delete process.env.OWNER_PHONE_NUMBER;
+
+  const bookingClient = createMockSetmoreClient({ business });
+  const router = createSmsRouter({ bookingClient });
+  const server = await startTestServer(router);
+
+  try {
+    const result = await sendSms(server.baseUrl, "Hi, I need a haircut appointment", "+13065554444");
+
+    assert.equal(result.response.status, 200);
+    assert.match(result.xml, /Thanks for texting Cuts By Haris/);
+    assert.match(result.xml, /1 Haircut/);
+  } finally {
+    await server.close();
+    sessions.clear();
+    lastCustomerByOwner.clear();
+    delete process.env.OWNER_PHONE_NUMBER;
+  }
+});
+
+test("unprompted category numbers do not activate the booking menu", async () => {
+  sessions.clear();
+  lastCustomerByOwner.clear();
+  delete process.env.OWNER_PHONE_NUMBER;
+
+  const bookingClient = createMockSetmoreClient({ business });
+  const router = createSmsRouter({ bookingClient });
+  const server = await startTestServer(router);
+
+  try {
+    const result = await sendSms(server.baseUrl, "1", "+13065554444");
+
+    assert.equal(result.response.status, 200);
+    assert.equal(result.xml, '<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
   } finally {
     await server.close();
     sessions.clear();

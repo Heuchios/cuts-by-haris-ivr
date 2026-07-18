@@ -13,8 +13,8 @@ Current MVP behavior:
 - Setmore is represented by a mock adapter until API access is approved
 - Spoken prompts use `Polly.Joanna` at `90%` speed by default
 - Menu options include a short `450ms` pause between choices
-- SMS customers can text `book`, choose category/service/time by number, and confirm by replying `1`
-- If `OWNER_PHONE_NUMBER` is set, non-booking texts forward to the owner phone
+- SMS customers can text booking phrases such as `book`, `haircut`, `fade`, or `appointment`, then choose category/service/time by number
+- If `OWNER_PHONE_NUMBER` is set, non-booking texts forward to the owner phone without sending a bot reply to the customer
 
 ## Menus
 
@@ -85,8 +85,8 @@ Use `POST` as the webhook method.
 
 Normal text routing:
 
-- Customer texts `book`: booking menu starts.
-- Customer texts anything else: message forwards to `OWNER_PHONE_NUMBER`.
+- Customer texts a booking phrase like `book`, `haircut`, `fade`, `beard`, or `appointment`: booking menu starts.
+- Customer texts anything else: message forwards to `OWNER_PHONE_NUMBER` without an automatic customer reply.
 - Owner replies with `r +13065551212 your message`.
 - Owner can reply to the most recent forwarded customer with `r your message`.
 

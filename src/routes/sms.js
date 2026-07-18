@@ -10,6 +10,30 @@ const { message, response, sendMessagingTwiML } = require("../messagingTwiml");
 
 const sessions = new Map();
 const lastCustomerByOwner = new Map();
+const BOOKING_TRIGGER_PATTERNS = [
+  /\bbook(?:ing)?\b/,
+  /\bmenu\b/,
+  /\bstart\b/,
+  /\bappointment\b/,
+  /\bappt\b/,
+  /\bschedule\b/,
+  /\breschedule\b/,
+  /\bcancel\b/,
+  /\bhair\s*cut\b/,
+  /\bhaircut\b/,
+  /\bcut\b/,
+  /\bbarber\b/,
+  /\bfade\b/,
+  /\bskin\s*fade\b/,
+  /\bbuzz\s*cut\b/,
+  /\bbeard\b/,
+  /\btrim\b/,
+  /\bline\s*up\b/,
+  /\blineup\b/,
+  /\bperm\b/,
+  /\bkids?\s*cut\b/,
+  /\bsenior(?:s)?\s*cut\b/
+];
 
 function canonicalPhone(value) {
   const digits = String(value || "").replace(/\D/g, "");
@@ -49,6 +73,10 @@ function sendText(res, text) {
   return sendMessagingTwiML(res, response(message(text)));
 }
 
+function sendNoReply(res) {
+  return sendMessagingTwiML(res, response());
+}
+
 function sendTo(res, to, text) {
   return sendMessagingTwiML(res, response(message(text, { to })));
 }
@@ -83,7 +111,8 @@ function ownerHelpText() {
 }
 
 function shouldStartBooking(body) {
-  return !body || ["start", "book", "booking", "appointment", "menu"].includes(body);
+  if (!body) return false;
+  return BOOKING_TRIGGER_PATTERNS.some((pattern) => pattern.test(body));
 }
 
 function shouldForwardToOwner(body, session) {
@@ -103,14 +132,6 @@ function forwardText() {
     "r {{from}} your message",
     "or for this customer:",
     "r your message"
-  ].join("\n");
-}
-
-function noOwnerFallbackText() {
-  return [
-    `Thanks for texting ${business.name}.`,
-    "For appointment booking, reply book.",
-    "For other questions, Haris will reply when available."
   ].join("\n");
 }
 
@@ -205,6 +226,11 @@ function createSmsRouter({ bookingClient }) {
 
     const session = sessions.get(from);
 
+    if (["cancel", "stop"].includes(body)) {
+      resetSession(from);
+      return sendText(res, `No problem. Your booking was not completed. Text book anytime to start again.`);
+    }
+
     if (owner && shouldForwardToOwner(body, session)) {
       lastCustomerByOwner.set(owner, from);
       return sendTo(
@@ -217,25 +243,20 @@ function createSmsRouter({ bookingClient }) {
     }
 
     if (!owner && shouldForwardToOwner(body, session)) {
-      return sendText(res, noOwnerFallbackText());
+      return sendNoReply(res);
     }
 
     if (shouldStartBooking(body)) {
-      resetSession(from);
+      setSession(from, { step: "select-category" });
       return sendText(res, mainMenuText());
-    }
-
-    if (["cancel", "stop"].includes(body)) {
-      resetSession(from);
-      return sendText(res, `No problem. Your booking was not completed. Text book anytime to start again.`);
     }
 
     if (body === "0") {
-      resetSession(from);
+      setSession(from, { step: "select-category" });
       return sendText(res, mainMenuText());
     }
 
-    if (!session) {
+    if (session && session.step === "select-category") {
       const category = getCategoryByDigit(body);
       if (!category) {
         return sendText(res, mainMenuText("Sorry, I did not understand that."));
@@ -246,6 +267,10 @@ function createSmsRouter({ bookingClient }) {
         categoryKey: category.key
       });
       return sendText(res, categoryMenuText(category));
+    }
+
+    if (!session) {
+      return sendNoReply(res);
     }
 
     if (session.step === "select-service") {
@@ -320,6 +345,7 @@ function createSmsRouter({ bookingClient }) {
 }
 
 module.exports = {
+  BOOKING_TRIGGER_PATTERNS,
   createSmsRouter,
   lastCustomerByOwner,
   sessions
