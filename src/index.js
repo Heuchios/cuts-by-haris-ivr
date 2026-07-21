@@ -25,7 +25,8 @@ app.get("/health", (req, res) => {
     timezone: business.timezone,
     smsForwardingEnabled: Boolean(process.env.OWNER_PHONE_NUMBER),
     bookingMode: bookingClient.mode,
-    setmore: bookingClient.configStatus
+    setmore: bookingClient.configStatus,
+    lastSetmoreError: bookingClient.getLastError?.() || null
   });
 });
 

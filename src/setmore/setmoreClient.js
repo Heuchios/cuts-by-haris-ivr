@@ -6,6 +6,7 @@ const DEFAULT_LOOKAHEAD_DAYS = 21;
 const DEFAULT_SLOT_LIMIT = 12;
 const REGINA_UTC_OFFSET_HOURS = 6;
 const TOKEN_REFRESH_SAFETY_MS = 60 * 1000;
+const ERROR_PREVIEW_MAX_LENGTH = 240;
 
 class SetmoreApiError extends Error {
   constructor(message, details = {}) {
@@ -21,6 +22,10 @@ function isTruthy(value) {
 
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
+}
+
+function stripQuery(value) {
+  return String(value || "").split("?")[0];
 }
 
 function serviceEnvSuffix(serviceKey) {
@@ -57,6 +62,61 @@ function serviceKeyMapFromEnv(env, services) {
     }
   }
   return map;
+}
+
+function responsePreview(value) {
+  if (value === undefined || value === null) return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text
+    .replace(/access_token["':\s]+[^"',}\s]+/gi, "access_token: [redacted]")
+    .replace(/refreshToken=[^&\s]+/gi, "refreshToken=[redacted]")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/\+?\d[\d\s().-]{8,}\d/g, "[redacted-phone]")
+    .slice(0, ERROR_PREVIEW_MAX_LENGTH);
+}
+
+function troubleshootingHint(error) {
+  const details = error?.details || {};
+  const path = String(details.path || "");
+  const message = String(error?.message || "");
+
+  if (message.includes("token refresh") || stripQuery(path).includes("/oauth2/token")) {
+    return "Setmore rejected the refresh token or token URL. Re-check the copied refresh token in Render.";
+  }
+  if (message.includes("staff key") || path.includes("/staffs")) {
+    return "Setmore staff lookup failed. Add SETMORE_STAFF_KEY in Render.";
+  }
+  if (message.includes("service key") || path.includes("/services")) {
+    return "Setmore service lookup failed. Add the matching SETMORE_SERVICE_KEY_* value in Render.";
+  }
+  if (path.includes("/appointments/slots")) {
+    return "Setmore rejected the slot lookup. This usually means the staff key, service key, or slot request format needs adjustment.";
+  }
+  if (path.includes("/appointment/create")) {
+    return "Setmore rejected appointment creation. The selected slot may no longer be available, or the appointment payload needs adjustment.";
+  }
+  if (path.includes("/customer")) {
+    return "Setmore rejected customer lookup or creation.";
+  }
+
+  return "Check Render logs for the full server-side stack trace.";
+}
+
+function sanitizeSetmoreError(operation, error) {
+  const details = error?.details || {};
+  const status = details.status || "";
+  const path = stripQuery(details.path || "");
+
+  return {
+    at: new Date().toISOString(),
+    operation,
+    name: error?.name || "Error",
+    message: error?.message || "Unknown Setmore error",
+    status,
+    path,
+    responsePreview: responsePreview(details.data),
+    hint: troubleshootingHint(error)
+  };
 }
 
 function getSetmoreConfigStatus({ business, env = process.env }) {
@@ -285,6 +345,7 @@ class SetmoreClient {
     this.accessTokenExpiresAt = 0;
     this.servicesCache = null;
     this.staffCache = null;
+    this.lastError = null;
   }
 
   async refreshAccessToken() {
@@ -292,32 +353,47 @@ class SetmoreClient {
       throw new SetmoreApiError("SETMORE_REFRESH_TOKEN is missing.");
     }
 
-    const url = new URL(this.tokenPath, this.baseUrl);
-    url.searchParams.set("refreshToken", this.refreshToken);
+    const encodedUrl = new URL(this.tokenPath, this.baseUrl);
+    encodedUrl.searchParams.set("refreshToken", this.refreshToken);
+    const rawTokenUrl = `${this.baseUrl}${this.tokenPath}?refreshToken=${this.refreshToken}`;
+    const urls = [...new Set([encodedUrl.toString(), rawTokenUrl])];
+    let lastFailure = null;
 
-    const response = await this.fetchImpl(url.toString(), {
-      method: "GET",
-      headers: {
-        Accept: "application/json"
-      }
-    });
-
-    const data = await this.parseResponse(response);
-    if (!response.ok) {
-      throw new SetmoreApiError("Setmore token refresh failed.", {
-        status: response.status,
-        data
+    for (const tokenUrl of urls) {
+      const response = await this.fetchImpl(tokenUrl, {
+        method: "GET",
+        headers: {
+          Accept: "application/json"
+        }
       });
+
+      const data = await this.parseResponse(response);
+      if (!response.ok) {
+        lastFailure = {
+          status: response.status,
+          data
+        };
+        continue;
+      }
+
+      const token = extractToken(data);
+      if (!token) {
+        lastFailure = {
+          status: response.status,
+          data
+        };
+        continue;
+      }
+
+      this.accessToken = token;
+      this.accessTokenExpiresAt = Date.now() + extractExpiresIn(data) * 1000;
+      return token;
     }
 
-    const token = extractToken(data);
-    if (!token) {
-      throw new SetmoreApiError("Setmore token refresh response did not include an access token.", { data });
-    }
-
-    this.accessToken = token;
-    this.accessTokenExpiresAt = Date.now() + extractExpiresIn(data) * 1000;
-    return token;
+    throw new SetmoreApiError("Setmore token refresh failed.", {
+      path: this.tokenPath,
+      ...(lastFailure || {})
+    });
   }
 
   async ensureAccessToken() {
@@ -420,34 +496,39 @@ class SetmoreClient {
   }
 
   async listAvailableSlots({ service, count = 3, from = this.now() }) {
-    const staffKey = await this.getStaffKey();
-    const serviceKey = await this.getServiceKey(service);
-    let local = getLocalDateParts(from, this.business.timezone);
-    const slots = [];
+    try {
+      const staffKey = await this.getStaffKey();
+      const serviceKey = await this.getServiceKey(service);
+      let local = getLocalDateParts(from, this.business.timezone);
+      const slots = [];
 
-    for (let day = 0; day < this.lookaheadDays && slots.length < count; day += 1) {
-      const selectedDate = formatSelectedDate(local);
-      const payload = await this.request("/api/v2/bookingapi/appointments/slots", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          staff_key: staffKey,
-          service_key: serviceKey,
-          selected_date: selectedDate,
-          off_hours: false,
-          double_booking: false,
-          timezone: this.business.timezone,
-          slot_limit: this.slotLimit
-        })
-      });
+      for (let day = 0; day < this.lookaheadDays && slots.length < count; day += 1) {
+        const selectedDate = formatSelectedDate(local);
+        const payload = await this.request("/api/v2/bookingapi/appointments/slots", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            staff_key: staffKey,
+            service_key: serviceKey,
+            selected_date: selectedDate,
+            off_hours: false,
+            double_booking: false,
+            timezone: this.business.timezone,
+            slot_limit: this.slotLimit
+          })
+        });
 
-      slots.push(...normalizeSlots(payload, { service, local }));
-      local = addDaysToLocalDate(local, 1);
+        slots.push(...normalizeSlots(payload, { service, local }));
+        local = addDaysToLocalDate(local, 1);
+      }
+
+      return slots.slice(0, count);
+    } catch (error) {
+      this.lastError = sanitizeSetmoreError("listAvailableSlots", error);
+      throw error;
     }
-
-    return slots.slice(0, count);
   }
 
   async findCustomer(customerPhone) {
@@ -495,35 +576,44 @@ class SetmoreClient {
   }
 
   async createAppointment({ service, startAt, customerPhone }) {
-    const staffKey = await this.getStaffKey();
-    const serviceKey = await this.getServiceKey(service);
-    const customer = await this.getOrCreateCustomer(customerPhone);
-    const customerKey = pickKey(customer);
+    try {
+      const staffKey = await this.getStaffKey();
+      const serviceKey = await this.getServiceKey(service);
+      const customer = await this.getOrCreateCustomer(customerPhone);
+      const customerKey = pickKey(customer);
 
-    const payload = await this.request("/api/v2/bookingapi/appointment/create", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        staff_key: staffKey,
-        service_key: serviceKey,
-        customer_key: customerKey,
-        start_time: new Date(startAt).toISOString(),
-        end_time: addMinutes(startAt, service.durationMinutes),
-        cost: service.priceDollars
-      })
-    });
+      const payload = await this.request("/api/v2/bookingapi/appointment/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          staff_key: staffKey,
+          service_key: serviceKey,
+          customer_key: customerKey,
+          start_time: new Date(startAt).toISOString(),
+          end_time: addMinutes(startAt, service.durationMinutes),
+          cost: service.priceDollars
+        })
+      });
 
-    const appointment = extractAppointment(payload);
-    return {
-      id: pickKey(appointment) || `setmore-${Date.now()}`,
-      serviceKey: service.key,
-      startAt,
-      customerPhone,
-      status: "booked",
-      raw: appointment
-    };
+      const appointment = extractAppointment(payload);
+      return {
+        id: pickKey(appointment) || `setmore-${Date.now()}`,
+        serviceKey: service.key,
+        startAt,
+        customerPhone,
+        status: "booked",
+        raw: appointment
+      };
+    } catch (error) {
+      this.lastError = sanitizeSetmoreError("createAppointment", error);
+      throw error;
+    }
+  }
+
+  getLastError() {
+    return this.lastError;
   }
 }
 

@@ -234,14 +234,52 @@ function bookingSystemTroubleText() {
   ].join("\n");
 }
 
-async function showSlots({ res, from, bookingClient, service, prefix = "" }) {
+function bookingTroubleOwnerText({ from, rawBody, service, stage }) {
+  return [
+    "Booking bot needs manual help",
+    `From: ${from}`,
+    `Stage: ${stage}`,
+    service ? `Service: ${service.speechName}` : "",
+    rawBody ? `Customer text: ${rawBody}` : "",
+    "",
+    "Reply with:",
+    `r ${from} your message`
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function sendBookingTrouble({ res, from, owner, rawBody, service, stage }) {
+  const customerText = bookingSystemTroubleText();
+  if (!owner) {
+    return sendText(res, customerText);
+  }
+
+  lastCustomerByOwner.set(owner, from);
+  return sendMessagingTwiML(
+    res,
+    response(
+      message(customerText),
+      message(bookingTroubleOwnerText({ from, rawBody, service, stage }), { to: owner })
+    )
+  );
+}
+
+async function showSlots({ res, from, owner, rawBody, bookingClient, service, prefix = "" }) {
   let slots;
   try {
     slots = await bookingClient.listAvailableSlots({ service, count: 3 });
   } catch (error) {
-    console.error("SMS slot lookup failed", error);
+    console.error("SMS slot lookup failed", bookingClient.getLastError?.() || error);
     resetSession(from);
-    return sendText(res, bookingSystemTroubleText());
+    return sendBookingTrouble({
+      res,
+      from,
+      owner,
+      rawBody,
+      service,
+      stage: "slot lookup"
+    });
   }
 
   if (!slots.length) {
@@ -342,7 +380,7 @@ function createSmsRouter({ bookingClient }) {
         return sendText(res, categoryMenuText(category, "Sorry, that service number was not valid."));
       }
 
-      return showSlots({ res, from, bookingClient, service });
+      return showSlots({ res, from, owner, rawBody, bookingClient, service });
     }
 
     if (session.step === "select-slot") {
@@ -385,9 +423,16 @@ function createSmsRouter({ bookingClient }) {
           customerPhone: from
         });
       } catch (error) {
-        console.error("SMS appointment create failed", error);
+        console.error("SMS appointment create failed", bookingClient.getLastError?.() || error);
         resetSession(from);
-        return sendText(res, bookingSystemTroubleText());
+        return sendBookingTrouble({
+          res,
+          from,
+          owner,
+          rawBody,
+          service: match.service,
+          stage: "appointment create"
+        });
       }
 
       resetSession(from);
