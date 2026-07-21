@@ -55,6 +55,31 @@ function isBusinessOpen(business, at = new Date()) {
   return current >= open && current < close;
 }
 
+function isFutureDateTime(value, from = new Date()) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() > from.getTime();
+}
+
+function isWithinBusinessHours(business, startAt, durationMinutes = 0) {
+  const local = getLocalDateParts(new Date(startAt), business.timezone);
+  if (!business.hours.openDays.includes(local.weekday)) {
+    return false;
+  }
+
+  const start = local.hour * 60 + local.minute;
+  const end = start + Number(durationMinutes || 0);
+  const open = parseClockTime(business.hours.open);
+  const close = parseClockTime(business.hours.close);
+
+  return start >= open && end <= close;
+}
+
+function isBookableSlot(business, slot, service, from = new Date()) {
+  const startAt = slot?.startAt || slot;
+  return isFutureDateTime(startAt, from) && isWithinBusinessHours(business, startAt, service?.durationMinutes || 0);
+}
+
 function formatSlotForSpeech(slot, timeZone) {
   const date = new Date(slot.startAt);
   return new Intl.DateTimeFormat("en-CA", {
@@ -71,7 +96,9 @@ function formatSlotForSpeech(slot, timeZone) {
 module.exports = {
   formatSlotForSpeech,
   getLocalDateParts,
+  isBookableSlot,
   isBusinessOpen,
+  isFutureDateTime,
+  isWithinBusinessHours,
   parseClockTime
 };
-

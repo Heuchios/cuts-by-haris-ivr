@@ -7,9 +7,12 @@ const {
   getServiceByKey
 } = require("../businessData");
 const { message, response, sendMessagingTwiML } = require("../messagingTwiml");
+const { isBookableSlot } = require("../utils/time");
 
 const sessions = new Map();
 const lastCustomerByOwner = new Map();
+const DEFAULT_SLOT_OPTION_COUNT = 6;
+const MAX_SLOT_OPTION_COUNT = 9;
 const BOOKING_TRIGGER_PATTERNS = [
   /\bbook(?:ing)?\b/,
   /\bmenu\b/,
@@ -234,6 +237,12 @@ function bookingSystemTroubleText() {
   ].join("\n");
 }
 
+function slotOptionCount() {
+  const value = Number(process.env.SMS_SLOT_OPTION_COUNT || DEFAULT_SLOT_OPTION_COUNT);
+  if (!Number.isFinite(value)) return DEFAULT_SLOT_OPTION_COUNT;
+  return Math.max(1, Math.min(MAX_SLOT_OPTION_COUNT, Math.floor(value)));
+}
+
 function bookingTroubleOwnerText({ from, rawBody, service, stage }) {
   return [
     "Booking bot needs manual help",
@@ -268,7 +277,7 @@ function sendBookingTrouble({ res, from, owner, rawBody, service, stage }) {
 async function showSlots({ res, from, owner, rawBody, bookingClient, service, prefix = "" }) {
   let slots;
   try {
-    slots = await bookingClient.listAvailableSlots({ service, count: 3 });
+    slots = await bookingClient.listAvailableSlots({ service, count: slotOptionCount() });
   } catch (error) {
     console.error("SMS slot lookup failed", bookingClient.getLastError?.() || error);
     resetSession(from);
@@ -396,6 +405,18 @@ function createSmsRouter({ bookingClient }) {
         return sendText(res, slotMenuText(match.service, session.slots, "Sorry, that time number was not valid."));
       }
 
+      if (!isBookableSlot(business, selectedSlot, match.service)) {
+        return showSlots({
+          res,
+          from,
+          owner,
+          rawBody,
+          bookingClient,
+          service: match.service,
+          prefix: "Sorry, that time is no longer available."
+        });
+      }
+
       setSession(from, {
         step: "confirm",
         serviceKey: match.service.key,
@@ -413,6 +434,18 @@ function createSmsRouter({ bookingClient }) {
 
       if (body !== "1" && body !== "yes" && body !== "y") {
         return sendText(res, confirmText(match.service, session.selectedSlot));
+      }
+
+      if (!isBookableSlot(business, session.selectedSlot, match.service)) {
+        return showSlots({
+          res,
+          from,
+          owner,
+          rawBody,
+          bookingClient,
+          service: match.service,
+          prefix: "Sorry, that time is no longer available."
+        });
       }
 
       let appointment;

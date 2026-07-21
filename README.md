@@ -69,6 +69,7 @@ Create a new Render Web Service from this project.
   - `TWILIO_MENU_OPTION_PAUSE=450ms`
 - Optional smart SMS routing:
   - `OWNER_PHONE_NUMBER=+13065551212`
+  - `SMS_SLOT_OPTION_COUNT=6`
 - Optional Setmore live booking:
   - `SETMORE_ENABLED=true`
   - `SETMORE_REFRESH_TOKEN=...`
@@ -120,6 +121,7 @@ The app now has two booking modes:
 The Setmore adapter:
 
 - lists available slots for the selected staff/service/date
+- filters Setmore slot results to future appointment times inside business hours
 - creates or finds the SMS caller as a Setmore customer by phone number
 - creates the appointment in Setmore
 - returns the final appointment ID

@@ -183,6 +183,39 @@ test("unprompted category numbers do not activate the booking menu", async () =>
   }
 });
 
+test("stale SMS slot selections are replaced with fresh available times", async () => {
+  sessions.clear();
+  lastCustomerByOwner.clear();
+  delete process.env.OWNER_PHONE_NUMBER;
+
+  const customer = "+13065556666";
+  const bookingClient = createMockSetmoreClient({ business });
+  const router = createSmsRouter({ bookingClient });
+  const server = await startTestServer(router);
+
+  try {
+    sessions.set(customer, {
+      step: "confirm",
+      serviceKey: "skin-fade",
+      selectedSlot: {
+        startAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        serviceKey: "skin-fade"
+      }
+    });
+
+    const result = await sendSms(server.baseUrl, "1", customer);
+
+    assert.equal(result.response.status, 200);
+    assert.match(result.xml, /Sorry, that time is no longer available/);
+    assert.match(result.xml, /You chose skin fade/);
+    assert.match(result.xml, /Reply with a time/);
+  } finally {
+    await server.close();
+    sessions.clear();
+    delete process.env.OWNER_PHONE_NUMBER;
+  }
+});
+
 
 test("owner can reply to the most recent forwarded customer", async () => {
   sessions.clear();

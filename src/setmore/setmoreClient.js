@@ -1,5 +1,5 @@
 const { listServices } = require("../businessData");
-const { getLocalDateParts } = require("../utils/time");
+const { getLocalDateParts, isBookableSlot } = require("../utils/time");
 
 const DEFAULT_BASE_URL = "https://developer.setmore.com";
 const DEFAULT_API_PREFIX = "/api/v2";
@@ -295,6 +295,18 @@ function normalizeSlots(payload, { service, local }) {
     .filter(Boolean);
 }
 
+function sortAndDedupeSlots(slots) {
+  const seen = new Set();
+  return [...slots]
+    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+    .filter((slot) => {
+      const key = `${slot.serviceKey}-${slot.startAt}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function addMinutes(isoString, minutes) {
   const date = new Date(isoString);
   date.setMinutes(date.getMinutes() + minutes);
@@ -577,11 +589,15 @@ class SetmoreClient {
           })
         });
 
-        slots.push(...normalizeSlots(payload, { service, local }));
+        slots.push(
+          ...normalizeSlots(payload, { service, local }).filter((slot) =>
+            isBookableSlot(this.business, slot, service, from)
+          )
+        );
         local = addDaysToLocalDate(local, 1);
       }
 
-      return slots.slice(0, count);
+      return sortAndDedupeSlots(slots).slice(0, count);
     } catch (error) {
       this.lastError = sanitizeSetmoreError("listAvailableSlots", error);
       throw error;
@@ -639,6 +655,11 @@ class SetmoreClient {
       const staffKey = await this.getStaffKey();
       const serviceKey = await this.getServiceKey(service);
       await this.ensureAccessToken();
+      if (!isBookableSlot(this.business, startAt, service, this.now())) {
+        throw new SetmoreApiError("Selected appointment time is outside bookable hours.", {
+          path: "local-validation"
+        });
+      }
       const customer = await this.getOrCreateCustomer(customerPhone);
       const customerKey = pickKey(customer);
 

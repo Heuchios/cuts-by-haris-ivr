@@ -220,7 +220,12 @@ test("Setmore appointment creation creates a phone customer and posts appointmen
       }
     }
   ]);
-  const client = createSetmoreClient({ business, env, fetchImpl });
+  const client = createSetmoreClient({
+    business,
+    env,
+    fetchImpl,
+    now: () => new Date("2026-07-18T15:00:00.000Z")
+  });
 
   const appointment = await client.createAppointment({
     service: haircut,
@@ -242,6 +247,55 @@ test("Setmore appointment creation creates a phone customer and posts appointmen
     end_time: "2026-07-18T16:30:00.000Z",
     cost: 35
   });
+});
+
+test("Setmore slot lookup filters past and out-of-hours slots", async () => {
+  const skinFade = serviceByKey("skin-fade");
+  const env = {
+    SETMORE_ENABLED: "true",
+    SETMORE_REFRESH_TOKEN: "refresh-token",
+    SETMORE_STAFF_KEY: "staff-1",
+    SETMORE_SERVICE_KEY_SKIN_FADE: "service-1",
+    SETMORE_LOOKAHEAD_DAYS: "1",
+    SETMORE_SLOT_LIMIT: "10"
+  };
+  const fetchImpl = queuedFetch([
+    {
+      body: {
+        data: {
+          token: {
+            access_token: "access-token",
+            expires_in: 3600
+          }
+        }
+      }
+    },
+    {
+      body: {
+        data: {
+          slots: ["9:30 AM", "2:00 PM", "5:30 PM", "6:30 PM"]
+        }
+      }
+    }
+  ]);
+
+  const client = createSetmoreClient({
+    business,
+    env,
+    fetchImpl,
+    now: () => new Date("2026-07-18T19:00:00.000Z")
+  });
+
+  const slots = await client.listAvailableSlots({
+    service: skinFade,
+    count: 4,
+    from: new Date("2026-07-18T19:00:00.000Z")
+  });
+
+  assert.deepEqual(
+    slots.map((slot) => slot.startAt),
+    ["2026-07-18T20:00:00.000Z"]
+  );
 });
 
 test("Setmore service key env names match the documented Render variables", () => {
