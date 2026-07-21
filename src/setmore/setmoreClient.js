@@ -2,6 +2,7 @@ const { listServices } = require("../businessData");
 const { getLocalDateParts } = require("../utils/time");
 
 const DEFAULT_BASE_URL = "https://developer.setmore.com";
+const DEFAULT_API_PREFIX = "/api/v2";
 const DEFAULT_LOOKAHEAD_DAYS = 21;
 const DEFAULT_SLOT_LIMIT = 12;
 const REGINA_UTC_OFFSET_HOURS = 6;
@@ -24,8 +25,26 @@ function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
 }
 
+function trimSlashes(value) {
+  return String(value || "").replace(/^\/+|\/+$/g, "");
+}
+
+function normalizeApiPrefix(value) {
+  const text = `/${trimSlashes(value || DEFAULT_API_PREFIX)}`;
+  return text === "/" ? DEFAULT_API_PREFIX : text;
+}
+
 function stripQuery(value) {
   return String(value || "").split("?")[0];
+}
+
+function apiPrefixFromTokenPath(path) {
+  const match = String(path || "").match(/^(\/api\/v\d+)\/o\/oauth2\/token$/);
+  return match ? match[1] : "";
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))];
 }
 
 function serviceEnvSuffix(serviceKey) {
@@ -131,6 +150,7 @@ function getSetmoreConfigStatus({ business, env = process.env }) {
     ready: enabled && hasRefreshToken,
     mode: enabled && hasRefreshToken ? "setmore" : "mock",
     baseUrl: trimTrailingSlash(env.SETMORE_API_BASE_URL) || DEFAULT_BASE_URL,
+    apiPrefix: normalizeApiPrefix(env.SETMORE_API_PREFIX),
     hasRefreshToken,
     hasStaffKey: Boolean(env.SETMORE_STAFF_KEY),
     staffNameConfigured: Boolean(env.SETMORE_STAFF_NAME),
@@ -334,8 +354,9 @@ class SetmoreClient {
     this.now = now;
     this.mode = "setmore";
     this.baseUrl = trimTrailingSlash(env.SETMORE_API_BASE_URL) || DEFAULT_BASE_URL;
+    this.apiPrefix = normalizeApiPrefix(env.SETMORE_API_PREFIX);
     this.refreshToken = env.SETMORE_REFRESH_TOKEN;
-    this.tokenPath = env.SETMORE_TOKEN_PATH || "/api/v2/o/oauth2/token";
+    this.tokenPath = env.SETMORE_TOKEN_PATH || `${this.apiPrefix}/o/oauth2/token`;
     this.serviceKeyMap = serviceKeyMapFromEnv(env, listServices(business));
     this.staffKey = env.SETMORE_STAFF_KEY || "";
     this.staffName = env.SETMORE_STAFF_NAME || "";
@@ -353,41 +374,57 @@ class SetmoreClient {
       throw new SetmoreApiError("SETMORE_REFRESH_TOKEN is missing.");
     }
 
-    const encodedUrl = new URL(this.tokenPath, this.baseUrl);
-    encodedUrl.searchParams.set("refreshToken", this.refreshToken);
-    const rawTokenUrl = `${this.baseUrl}${this.tokenPath}?refreshToken=${this.refreshToken}`;
-    const urls = [...new Set([encodedUrl.toString(), rawTokenUrl])];
+    const paths = uniqueValues([
+      this.tokenPath,
+      `${this.apiPrefix}/o/oauth2/token`,
+      "/api/v2/o/oauth2/token",
+      "/api/v1/o/oauth2/token"
+    ]);
     let lastFailure = null;
 
-    for (const tokenUrl of urls) {
-      const response = await this.fetchImpl(tokenUrl, {
-        method: "GET",
-        headers: {
-          Accept: "application/json"
+    for (const path of paths) {
+      const encodedUrl = new URL(path, this.baseUrl);
+      encodedUrl.searchParams.set("refreshToken", this.refreshToken);
+      const rawTokenUrl = `${this.baseUrl}${path}?refreshToken=${this.refreshToken}`;
+      const urls = uniqueValues([encodedUrl.toString(), rawTokenUrl]);
+
+      for (const tokenUrl of urls) {
+        const response = await this.fetchImpl(tokenUrl, {
+          method: "GET",
+          headers: {
+            Accept: "application/json"
+          }
+        });
+
+        const data = await this.parseResponse(response);
+        if (!response.ok) {
+          lastFailure = {
+            status: response.status,
+            path,
+            data
+          };
+          continue;
         }
-      });
 
-      const data = await this.parseResponse(response);
-      if (!response.ok) {
-        lastFailure = {
-          status: response.status,
-          data
-        };
-        continue;
+        const token = extractToken(data);
+        if (!token) {
+          lastFailure = {
+            status: response.status,
+            path,
+            data
+          };
+          continue;
+        }
+
+        const matchedPrefix = apiPrefixFromTokenPath(path);
+        if (matchedPrefix) {
+          this.apiPrefix = matchedPrefix;
+          this.tokenPath = path;
+        }
+        this.accessToken = token;
+        this.accessTokenExpiresAt = Date.now() + extractExpiresIn(data) * 1000;
+        return token;
       }
-
-      const token = extractToken(data);
-      if (!token) {
-        lastFailure = {
-          status: response.status,
-          data
-        };
-        continue;
-      }
-
-      this.accessToken = token;
-      this.accessTokenExpiresAt = Date.now() + extractExpiresIn(data) * 1000;
-      return token;
     }
 
     throw new SetmoreApiError("Setmore token refresh failed.", {
@@ -445,10 +482,28 @@ class SetmoreClient {
     return unwrapSetmoreData(data);
   }
 
+  async requestAny(paths, options = {}) {
+    let lastError = null;
+    for (const path of paths) {
+      try {
+        return await this.request(path, options);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError;
+  }
+
+  apiPath(path) {
+    return `${this.apiPrefix}/${trimSlashes(path)}`;
+  }
+
   async getStaffKey() {
     if (this.staffKey) return this.staffKey;
     if (!this.staffCache) {
-      const payload = await this.request("/api/v2/bookingapi/staffs");
+      await this.ensureAccessToken();
+      const payload = await this.request(this.apiPath("bookingapi/staffs"));
       const staff = collectArrays(payload).find((items) => items.length > 0) || [];
       this.staffCache = staff;
     }
@@ -472,7 +527,8 @@ class SetmoreClient {
     }
 
     if (!this.servicesCache) {
-      const payload = await this.request("/api/v2/bookingapi/services");
+      await this.ensureAccessToken();
+      const payload = await this.request(this.apiPath("bookingapi/services"));
       this.servicesCache = collectArrays(payload).find((items) => items.length > 0) || [];
     }
 
@@ -499,12 +555,13 @@ class SetmoreClient {
     try {
       const staffKey = await this.getStaffKey();
       const serviceKey = await this.getServiceKey(service);
+      await this.ensureAccessToken();
       let local = getLocalDateParts(from, this.business.timezone);
       const slots = [];
 
       for (let day = 0; day < this.lookaheadDays && slots.length < count; day += 1) {
         const selectedDate = formatSelectedDate(local);
-        const payload = await this.request("/api/v2/bookingapi/appointments/slots", {
+        const payload = await this.requestAny([this.apiPath("bookingapi/appointments/slots"), this.apiPath("bookingapi/slots")], {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
@@ -532,16 +589,18 @@ class SetmoreClient {
   }
 
   async findCustomer(customerPhone) {
+    await this.ensureAccessToken();
     const query = new URLSearchParams({
       phone: customerPhone
     });
-    const payload = await this.request(`/api/v2/bookingapi/customer?${query.toString()}`);
+    const payload = await this.request(`${this.apiPath("bookingapi/customer")}?${query.toString()}`);
     return extractCustomer(payload);
   }
 
   async createCustomer(customerPhone) {
+    await this.ensureAccessToken();
     const digits = phoneDigits(customerPhone);
-    const payload = await this.request("/api/v2/bookingapi/customer/create", {
+    const payload = await this.request(this.apiPath("bookingapi/customer/create"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -579,10 +638,11 @@ class SetmoreClient {
     try {
       const staffKey = await this.getStaffKey();
       const serviceKey = await this.getServiceKey(service);
+      await this.ensureAccessToken();
       const customer = await this.getOrCreateCustomer(customerPhone);
       const customerKey = pickKey(customer);
 
-      const payload = await this.request("/api/v2/bookingapi/appointment/create", {
+      const payload = await this.request(this.apiPath("bookingapi/appointment/create"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

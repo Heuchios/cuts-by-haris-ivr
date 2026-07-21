@@ -112,6 +112,69 @@ test("Setmore slot lookup refreshes token and posts the expected slot request", 
   });
 });
 
+test("Setmore token and slot lookup can fall back to legacy v1 endpoints", async () => {
+  const buzzCut = serviceByKey("buzz-cut");
+  const env = {
+    SETMORE_ENABLED: "true",
+    SETMORE_REFRESH_TOKEN: "refresh-token",
+    SETMORE_STAFF_KEY: "staff-1",
+    SETMORE_SERVICE_KEY_BUZZ_CUT: "service-4",
+    SETMORE_LOOKAHEAD_DAYS: "1"
+  };
+  const fetchImpl = queuedFetch([
+    {
+      status: 400,
+      body: {
+        response: false,
+        error: "invalid_refresh_token"
+      }
+    },
+    {
+      body: {
+        data: {
+          token: {
+            access_token: "access-token",
+            expires_in: 3600
+          }
+        }
+      }
+    },
+    {
+      status: 404,
+      body: {
+        response: false,
+        error: "not_found"
+      }
+    },
+    {
+      body: {
+        data: {
+          slots: ["10:30 AM"]
+        }
+      }
+    }
+  ]);
+
+  const client = createSetmoreClient({
+    business,
+    env,
+    fetchImpl,
+    now: () => new Date("2026-07-18T14:00:00.000Z")
+  });
+
+  const slots = await client.listAvailableSlots({
+    service: buzzCut,
+    count: 1,
+    from: new Date("2026-07-18T14:00:00.000Z")
+  });
+
+  assert.equal(slots.length, 1);
+  assert.equal(fetchImpl.calls[0].url, "https://developer.setmore.com/api/v2/o/oauth2/token?refreshToken=refresh-token");
+  assert.equal(fetchImpl.calls[1].url, "https://developer.setmore.com/api/v1/o/oauth2/token?refreshToken=refresh-token");
+  assert.equal(fetchImpl.calls[2].url, "https://developer.setmore.com/api/v1/bookingapi/appointments/slots");
+  assert.equal(fetchImpl.calls[3].url, "https://developer.setmore.com/api/v1/bookingapi/slots");
+});
+
 test("Setmore appointment creation creates a phone customer and posts appointment data", async () => {
   const haircut = serviceByKey("regular-haircut-no-fade");
   const env = {
